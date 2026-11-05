@@ -1,0 +1,3 @@
+# Only the reviewed Dockerfile enters the build context.
+**
+!Dockerfile

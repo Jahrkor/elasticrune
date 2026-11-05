@@ -1,0 +1,15 @@
+Elasticrune container packaging
+
+Maintained upstream: https://github.com/elastic/elasticsearch
+Docker source: https://github.com/elastic/elasticsearch/tree/main/distribution/docker
+Selected upstream commit: 1370365b7b234866238d2121782bca7613e2d7c1 (v9.4.9)
+
+Historical packaging lineage: https://github.com/elastic/elasticsearch-docker
+Copyright 2016-2017 Elasticsearch B.V.
+That archived repository is credited for historical lineage, not maintained upstream.
+
+New standalone packaging and validation code is licensed under Apache-2.0.
+The official Elasticsearch binary distribution remains licensed under Elastic
+License 2.0, with its original LICENSE.txt and NOTICE.txt retained in the image.
+Other included components retain their respective licenses and notices.
+Elasticrune is not an official Elastic distribution or an endorsement by Elastic.

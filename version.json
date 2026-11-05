@@ -1,0 +1,6 @@
+{
+  "version": "2.2.3-rc1",
+  "elasticsearch": "9.4.9",
+  "platform": "linux/amd64",
+  "image_repository": "hrafnox/elasticrune"
+}
