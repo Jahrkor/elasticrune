@@ -82,6 +82,9 @@ def ready(container, nodes=1, auth=True):
     deadline = time.monotonic() + 240
     last_error = ""
     while time.monotonic() < deadline:
+        state = json.loads(run("docker", "inspect", container).stdout)[0]["State"]
+        if not state["Running"]:
+            raise RuntimeError(f"Test container exited during startup (code {state['ExitCode']}); see saved logs")
         try:
             health = api(container, f"/_cluster/health?wait_for_nodes={nodes}&wait_for_status=yellow&timeout=5s", auth=auth)
             if not health.get("timed_out") and health["number_of_nodes"] == nodes:
@@ -172,7 +175,12 @@ try:
     run("docker", "run", "--rm", "--network", "none", "--user", "0",
         "--mount", f"type=volume,source={cert_volume},target=/certs",
         "--entrypoint", "/usr/share/elasticsearch/bin/elasticsearch-certutil", a.tag,
-        "cert", "--silent", "--self-signed", "--out", "/certs/transport.p12", "--pass", password)
+        "ca", "--silent", "--out", "/certs/ca.p12", "--pass", password)
+    run("docker", "run", "--rm", "--network", "none", "--user", "0",
+        "--mount", f"type=volume,source={cert_volume},target=/certs",
+        "--entrypoint", "/usr/share/elasticsearch/bin/elasticsearch-certutil", a.tag,
+        "cert", "--silent", "--ca", "/certs/ca.p12", "--ca-pass", password,
+        "--out", "/certs/transport.p12", "--pass", password)
     run("docker", "run", "--rm", "--network", "none", "--user", "0",
         "--mount", f"type=volume,source={cert_volume},target=/certs",
         "--entrypoint", "sh", a.tag, "-c",
