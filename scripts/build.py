@@ -30,5 +30,11 @@ if result.returncode:
     raise SystemExit(f"Build failed; see {log.name}")
 inspection = json.loads(run("docker", "image", "inspect", a.tag).stdout)[0]
 save(out / f"{name}-image.json", inspection)
+setid = run("docker", "run", "--rm", "--network", "none", "--user", "0",
+            "--entrypoint", "sh", inspection["Id"], "-c",
+            "find / -xdev -type f \\( -perm -4000 -o -perm -2000 \\) -print").stdout.strip()
+save(out / f"{name}-setid.json", {"image_id": inspection["Id"], "setid_paths": setid.splitlines()})
+if setid:
+    raise SystemExit("Build gate failed: setuid/setgid files remain; see evidence")
 print(json.dumps({"tag": a.tag, "source_commit": revision,
                   "image_id": inspection["Id"], "metadata": str(metadata)}))

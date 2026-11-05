@@ -123,8 +123,15 @@ try:
     run("docker", "network", "create", "--internal", "--label", f"elasticrune.test={prefix}", network)
     network_created = True
     image = json.loads(run("docker", "image", "inspect", a.tag).stdout)[0]
+    save(out / "tested-image.json", {"tag": a.tag, "id": image["Id"],
+                                    "revision": image["Config"]["Labels"].get("org.opencontainers.image.revision")})
     assert image["Config"]["User"] == "1000:0"
     assert image["Config"]["Entrypoint"] == ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
+    setid = run("docker", "run", "--rm", "--network", "none", "--user", "0",
+                "--entrypoint", "sh", image["Id"], "-c",
+                "find / -xdev -type f \\( -perm -4000 -o -perm -2000 \\) -print").stdout.strip()
+    assert not setid, setid
+    record("root-setuid-setgid-audit", "No privileged file modes in final image")
     single = start("single", a.tag, single=True)
     ready(single, auth=True)
     root = api(single, "/", auth=True)

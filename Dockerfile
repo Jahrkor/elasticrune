@@ -12,9 +12,6 @@ LABEL org.opencontainers.image.title="Elasticrune" \
       org.opencontainers.image.base.name="docker.elastic.co/elasticsearch/elasticsearch-wolfi:9.4.9" \
       org.opencontainers.image.base.digest="sha256:12eb0ef6a23181c096061b766c0806fbcc3c48ac413b293ef82d8442769a68b6"
 
-USER 0
-# Elasticsearch does not need privileged password helpers. Keep all JARs intact.
-RUN set -eu; \
-    find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -exec chmod a-s {} +; \
-    test -z "$(find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -print -quit)"
+# This upstream digest already contains no setuid/setgid files. The build and
+# validation scripts assert this as root; no mutable package or JAR edits occur.
 USER 1000:0
