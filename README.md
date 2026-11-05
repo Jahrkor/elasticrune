@@ -53,8 +53,10 @@ TLS and authentication for production. Set file descriptor limits and host
 
 The validation harness creates only isolated synthetic test data on a Docker
 `--internal` network, publishes no ports, and removes only resources it created.
-Its security-disabled fixture is limited to this isolated test network; it is
-not a deployment example. It also checks authenticated startup separately.
+It tests authentication and transport TLS with freshly generated test certificates.
+HTTP requests run through `docker exec` to each node's loopback interface; external
+HTTPS termination is not covered. The certificates and volumes are removed afterward.
+This test fixture is not a production deployment example.
 
 Upgrading 9.4.8 to 9.4.9 is a patch-level engine upgrade. Follow the
 [rolling upgrade procedure](https://www.elastic.co/docs/deploy-manage/upgrade/deployment-or-cluster/elasticsearch),

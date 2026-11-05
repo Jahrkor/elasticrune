@@ -2,6 +2,7 @@
 import argparse
 import collections
 import json
+import os
 import pathlib
 from common import BASELINE, DEFAULT_TAG, evidence_dir, run, save
 
@@ -12,6 +13,10 @@ p.add_argument("--baseline", default=BASELINE)
 p.add_argument("--trivy", default="trivy")
 p.add_argument("--cache-dir", required=True)
 a = p.parse_args()
+# Ambient TRIVY_* settings must not silently change the release policy.
+for key in list(os.environ):
+    if key.startswith("TRIVY_"):
+        del os.environ[key]
 out = evidence_dir(a.evidence_dir)
 cache = evidence_dir(a.cache_dir)
 # Explicitly empty config/ignore files outside the repository prevent ambient

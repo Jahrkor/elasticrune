@@ -15,6 +15,7 @@ a = p.parse_args()
 out = evidence_dir(a.evidence_dir)
 prefix = "elasticrune-test-" + uuid.uuid4().hex[:10]
 network = prefix + "-net"
+cert_volume = prefix + "-certs"
 containers = set()
 volumes = set()
 network_created = False
@@ -46,8 +47,17 @@ def start(node, image, single=False, bootstrap=False):
         args += ["-e", "discovery.type=single-node", "-e", "xpack.security.enabled=true",
                  "-e", "xpack.security.http.ssl.enabled=false", "-e", "ELASTIC_PASSWORD=" + password]
     else:
-        # Test-only: internal network, no published ports, synthetic data only.
-        args += ["-e", "xpack.security.enabled=false", "-e", "discovery.seed_hosts=master",
+        # Generated test-only certificates; transport TLS and authentication on.
+        args += ["--mount", f"type=volume,source={cert_volume},target=/usr/share/elasticsearch/config/test-certs,readonly",
+                 "-e", "xpack.security.enabled=true", "-e", "xpack.security.http.ssl.enabled=false",
+                 "-e", "ELASTIC_PASSWORD=" + password,
+                 "-e", "xpack.security.transport.ssl.enabled=true",
+                 "-e", "xpack.security.transport.ssl.verification_mode=certificate",
+                 "-e", "xpack.security.transport.ssl.keystore.path=test-certs/transport.p12",
+                 "-e", "xpack.security.transport.ssl.truststore.path=test-certs/transport.p12",
+                 "-e", "xpack.security.transport.ssl.keystore.password=" + password,
+                 "-e", "xpack.security.transport.ssl.truststore.password=" + password,
+                 "-e", "discovery.seed_hosts=master",
                  "-e", "node.roles=" + ("master" if node == "master" else "data,ingest,remote_cluster_client")]
         if bootstrap:
             args += ["-e", "cluster.initial_master_nodes=master"]
@@ -56,7 +66,7 @@ def start(node, image, single=False, bootstrap=False):
     return name
 
 
-def api(container, path, method="GET", data=None, auth=False):
+def api(container, path, method="GET", data=None, auth=True):
     cmd = ["docker", "exec", "-i", container, "curl", "--silent", "--show-error",
            "--fail-with-body", "--max-time", "35", "-X", method]
     if auth:
@@ -68,7 +78,7 @@ def api(container, path, method="GET", data=None, auth=False):
     return json.loads(result.stdout)
 
 
-def ready(container, nodes=1, auth=False):
+def ready(container, nodes=1, auth=True):
     deadline = time.monotonic() + 240
     last_error = ""
     while time.monotonic() < deadline:
@@ -93,8 +103,17 @@ def stop(container, phase):
     state = json.loads(run("docker", "inspect", container).stdout)[0]["State"]
     logs = run("docker", "logs", container, check=False)
     (out / f"{container}-{phase}.log").write_text(logs.stdout + logs.stderr, encoding="utf-8")
-    assert state["ExitCode"] == 0 and not state["OOMKilled"], state
-    assert 'closed' in logs.stdout + logs.stderr, "Missing graceful node closure"
+    # The bundled JVM can return 128+SIGTERM (143) after completing its hooks.
+    # Require explicit Node closure as well; SIGKILL (137) is always a failure.
+    assert state["ExitCode"] in (0, 143) and not state["OOMKilled"], state
+    events = []
+    for line in (logs.stdout + logs.stderr).splitlines():
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    assert any(e.get("message") == "closed" and e.get("log.logger") == "org.elasticsearch.node.Node"
+               for e in events), "Missing graceful Node closure"
     run("docker", "rm", container)
     containers.remove(container)
     record("graceful-shutdown-" + phase, {"exit_code": state["ExitCode"], "oom": state["OOMKilled"]})
@@ -141,6 +160,16 @@ try:
     record("data-volume-restart", "Synthetic document persisted")
     stop(single, "single-restart")
 
+    run("docker", "volume", "create", "--label", f"elasticrune.test={prefix}", cert_volume)
+    volumes.add(cert_volume)
+    run("docker", "run", "--rm", "--network", "none", "--user", "0",
+        "--mount", f"type=volume,source={cert_volume},target=/certs",
+        "--entrypoint", "/usr/share/elasticsearch/bin/elasticsearch-certutil", a.tag,
+        "cert", "--silent", "--self-signed", "--out", "/certs/transport.p12", "--pass", password)
+    run("docker", "run", "--rm", "--network", "none", "--user", "0",
+        "--mount", f"type=volume,source={cert_volume},target=/certs",
+        "--entrypoint", "sh", a.tag, "-c",
+        "chown 1000:0 /certs/transport.p12 && chmod 0440 /certs/transport.p12")
     master = start("master", a.baseline, bootstrap=True)
     data1 = start("data1", a.baseline)
     data2 = start("data2", a.baseline)
@@ -150,7 +179,10 @@ try:
         api(data1, f"/rolling/_doc/{i}", "PUT", {"value": i, "message": "synthetic rolling upgrade"})
     api(data1, "/rolling/_refresh", "POST")
     green(data1)
-    record("baseline-three-node-cluster", "9.4.8: 20 documents, 2 shards, 1 replica, green")
+    settings = api(data1, "/_nodes/settings")
+    for node in settings["nodes"].values():
+        assert node["settings"]["xpack"]["security"]["transport"]["ssl"]["enabled"] == "true"
+    record("baseline-three-node-cluster", "9.4.8: authenticated, transport TLS, 20 documents, 2 shards, 1 replica, green")
     cluster_uuid = api(data1, "/")["cluster_uuid"]
     for node in ("data1", "data2", "master"):
         current = prefix + "-" + node
